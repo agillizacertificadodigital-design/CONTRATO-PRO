@@ -1,0 +1,248 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Profiles",
+      "description": "User profile with role management",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "contratantes": {
+      "title": "Contratantes",
+      "description": "Contractors (Pessoa Física or Pessoa Jurídica)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tipoPessoa": { "type": "string", "enum": ["PF", "PJ"] },
+        "nome": { "type": "string" },
+        "cpf": { "type": "string" },
+        "rg": { "type": "string" },
+        "orgaoExpedidor": { "type": "string" },
+        "nacionalidade": { "type": "string" },
+        "estadoCivil": { "type": "string" },
+        "profissao": { "type": "string" },
+        "razaoSocial": { "type": "string" },
+        "nomeFantasia": { "type": "string" },
+        "cnpj": { "type": "string" },
+        "inscricaoEstadual": { "type": "string" },
+        "inscricaoMunicipal": { "type": "string" },
+        "representanteLegal": { "type": "object" },
+        "telefone": { "type": "string" },
+        "whatsApp": { "type": "string" },
+        "email": { "type": "string" },
+        "cep": { "type": "string" },
+        "endereco": { "type": "string" },
+        "numero": { "type": "string" },
+        "complemento": { "type": "string" },
+        "bairro": { "type": "string" },
+        "cidade": { "type": "string" },
+        "estado": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["tipoPessoa", "nome", "createdBy"]
+    },
+    "contratados": {
+      "title": "Contratados",
+      "description": "Contractees (Pessoa Física or Pessoa Jurídica)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tipoPessoa": { "type": "string", "enum": ["PF", "PJ"] },
+        "nome": { "type": "string" },
+        "cpf": { "type": "string" },
+        "rg": { "type": "string" },
+        "orgaoExpedidor": { "type": "string" },
+        "nacionalidade": { "type": "string" },
+        "estadoCivil": { "type": "string" },
+        "profissao": { "type": "string" },
+        "razaoSocial": { "type": "string" },
+        "nomeFantasia": { "type": "string" },
+        "cnpj": { "type": "string" },
+        "inscricaoEstadual": { "type": "string" },
+        "inscricaoMunicipal": { "type": "string" },
+        "representanteLegal": { "type": "object" },
+        "telefone": { "type": "string" },
+        "whatsApp": { "type": "string" },
+        "email": { "type": "string" },
+        "cep": { "type": "string" },
+        "endereco": { "type": "string" },
+        "numero": { "type": "string" },
+        "complemento": { "type": "string" },
+        "bairro": { "type": "string" },
+        "cidade": { "type": "string" },
+        "estado": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["tipoPessoa", "nome", "createdBy"]
+    },
+    "modelos": {
+      "title": "Modelos de Contrato",
+      "description": "Contract templates",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nome": { "type": "string" },
+        "categoria": { "type": "string" },
+        "descricao": { "type": "string" },
+        "conteudo": { "type": "string" },
+        "clausulas": { "type": "array" },
+        "variaveis": { "type": "array" },
+        "camposDinamicos": { "type": "array" },
+        "regrasCondicionais": { "type": "array" },
+        "isFavorito": { "type": "boolean" },
+        "status": { "type": "string" },
+        "versao": { "type": "number" },
+        "arquivoOriginalUrl": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["nome", "categoria", "conteudo", "createdBy"]
+    },
+    "contratos": {
+      "title": "Contratos",
+      "description": "Generated contracts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "numero": { "type": "string" },
+        "titulo": { "type": "string" },
+        "modeloId": { "type": "string" },
+        "modeloNome": { "type": "string" },
+        "contratanteId": { "type": "string" },
+        "contratadoId": { "type": "string" },
+        "status": { "type": "string" },
+        "dataInicio": { "type": "string" },
+        "dataFim": { "type": "string" },
+        "tipoPrazo": { "type": "string" },
+        "valor": { "type": "number" },
+        "dadosVariaveis": { "type": "object" },
+        "conteudoFinal": { "type": "string" },
+        "clausulas": { "type": "array" },
+        "contractDataSnapshot": { "type": "object" },
+        "versaoAtual": { "type": "number" },
+        "contratoAssinadoUrl": { "type": "string" },
+        "dataEnvioAssinado": { "type": "string" },
+        "anexos": { "type": "array" },
+        "createdBy": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["numero", "titulo", "contratanteId", "contratadoId", "status", "createdBy"]
+    },
+    "contratoVersions": {
+      "title": "Contrato Versions",
+      "description": "Version history for contracts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "contratoId": { "type": "string" },
+        "versao": { "type": "number" },
+        "conteudoFinal": { "type": "string" },
+        "dadosVariaveis": { "type": "object" },
+        "contractDataSnapshot": { "type": "object" },
+        "motivoAlteracao": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["contratoId", "versao", "createdBy"]
+    },
+    "aditivos": {
+      "title": "Aditivos Contratuais",
+      "description": "Addendums for contracts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "numeroAditivo": { "type": "string" },
+        "contratoId": { "type": "string" },
+        "contratoNumero": { "type": "string" },
+        "objetoAditivo": { "type": "string" },
+        "alteracaoValor": { "type": "string" },
+        "alteracaoPrazo": { "type": "string" },
+        "alteracaoClausulas": { "type": "string" },
+        "observacoes": { "type": "string" },
+        "conteudoAditivo": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["contratoId", "objetoAditivo", "createdBy"]
+    },
+    "alertas": {
+      "title": "Alertas de Vencimento",
+      "description": "Alerts for contracts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "contratoId": { "type": "string" },
+        "contratoNumero": { "type": "string" },
+        "titulo": { "type": "string" },
+        "mensagem": { "type": "string" },
+        "dataVencimento": { "type": "string" },
+        "diasAntecedencia": { "type": "number" },
+        "lido": { "type": "boolean" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["contratoId", "mensagem", "dataVencimento"]
+    },
+    "configuracoes": {
+      "title": "Configurações do Sistema",
+      "description": "System and document settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nomeSistema": { "type": "string" },
+        "logomarcaUrl": { "type": "string" },
+        "dadosEscritorio": { "type": "object" },
+        "dadosResponsavel": { "type": "object" },
+        "configDocumento": { "type": "object" },
+        "padraoNumeracaoContrato": { "type": "string" },
+        "variaveisPersonalizadas": { "type": "array" },
+        "categorias": { "type": "array" }
+      }
+    },
+    "aiHistory": {
+      "title": "Histórico de IA",
+      "description": "Logs of Gemini AI usage",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "contratoId": { "type": "string" },
+        "acao": { "type": "string" },
+        "promptOriginal": { "type": "string" },
+        "respostaIA": { "type": "string" },
+        "statusAprovacao": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "auditLogs": {
+      "title": "Logs de Auditoria",
+      "description": "Audit trail for system actions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "usuarioId": { "type": "string" },
+        "usuarioEmail": { "type": "string" },
+        "acao": { "type": "string" },
+        "entidade": { "type": "string" },
+        "entidadeId": { "type": "string" },
+        "detalhes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["usuarioId", "acao", "entidade"]
+    }
+  }
+}

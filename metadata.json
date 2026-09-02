@@ -1,0 +1,6 @@
+{
+  "name": "Docfy PRO",
+  "description": "Docfy - Sistema de geração e gerenciamento inteligente de contratos com suporte a IA Gemini, formulários dinâmicos, PDF e DOCX, aditivos e histórico.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
