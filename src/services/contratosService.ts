@@ -101,21 +101,32 @@ export async function updateContrato(
 
   const docRef = doc(db, COLLECTION_NAME, id);
 
-  // If status is active or signed or content changed, create new version
+  const hasContentChanged = Boolean(data.conteudoFinal && data.conteudoFinal !== current.conteudoFinal);
+  const hasOtherChanges = Boolean(
+    (data.titulo && data.titulo !== current.titulo) ||
+    (data.status && data.status !== current.status) ||
+    (data.valor !== undefined && data.valor !== current.valor) ||
+    (data.clausulas && JSON.stringify(data.clausulas) !== JSON.stringify(current.clausulas))
+  );
+
   let nextVersion = current.versaoAtual || 1;
-  if (data.conteudoFinal && data.conteudoFinal !== current.conteudoFinal) {
+  if (hasContentChanged || hasOtherChanges) {
     nextVersion += 1;
     const versionRecord = sanitizeFirestoreData({
       contratoId: id,
       versao: nextVersion,
-      conteudoFinal: data.conteudoFinal,
-      dadosVariaveis: data.dadosVariaveis || current.dadosVariaveis,
-      contractDataSnapshot: data.contractDataSnapshot || current.contractDataSnapshot,
-      motivoAlteracao,
+      conteudoFinal: data.conteudoFinal || current.conteudoFinal,
+      dadosVariaveis: data.dadosVariaveis || current.dadosVariaveis || {},
+      contractDataSnapshot: data.contractDataSnapshot || current.contractDataSnapshot || null,
+      motivoAlteracao: motivoAlteracao || 'Alteração contratual',
       createdBy: uid,
       createdAt: new Date().toISOString()
     });
-    await addDoc(collection(db, VERSIONS_COLLECTION), versionRecord);
+    try {
+      await addDoc(collection(db, VERSIONS_COLLECTION), versionRecord);
+    } catch (verErr) {
+      console.warn('Não foi possível gravar registro no histórico de versões:', verErr);
+    }
   }
 
   const updatePayload = sanitizeFirestoreData({
@@ -163,8 +174,22 @@ export async function getVersoesContrato(contratoId: string): Promise<ContratoVe
       ...docSnap.data()
     })) as ContratoVersion[];
   } catch (err) {
-    console.error('Erro ao buscar versões do contrato:', err);
-    return [];
+    console.warn('Tentando fallback de consulta de versões sem ordenação composta:', err);
+    try {
+      const qFallback = query(
+        collection(db, VERSIONS_COLLECTION),
+        where('contratoId', '==', contratoId)
+      );
+      const snap = await getDocs(qFallback);
+      const items = snap.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      })) as ContratoVersion[];
+      return items.sort((a, b) => (b.versao || 0) - (a.versao || 0));
+    } catch (fallbackErr) {
+      console.error('Erro ao buscar versões do contrato:', fallbackErr);
+      return [];
+    }
   }
 }
 

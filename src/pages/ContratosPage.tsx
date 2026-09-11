@@ -13,12 +13,15 @@ import {
   AlertCircle,
   X,
   FileCode,
-  Edit2
+  Edit2,
+  Edit3,
+  Loader2
 } from 'lucide-react';
-import { getContratos, duplicarContrato, uploadContratoAssinado } from '../services/contratosService';
+import { getContratos, duplicarContrato, uploadContratoAssinado, getVersoesContrato } from '../services/contratosService';
 import { exportarPDF, exportarDOCX } from '../services/documentExportService';
-import { ContratoData } from '../types';
+import { ContratoData, ContratoVersion } from '../types';
 import { A4DocumentPreview } from '../components/A4DocumentPreview';
+import { EditContratoModal } from '../components/EditContratoModal';
 import { useAuth } from '../context/AuthContext';
 
 interface ContratosPageProps {
@@ -41,6 +44,14 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
   const [activeContrato, setActiveContrato] = useState<ContratoData | null>(null);
   const [activeTab, setActiveTab] = useState<'preview' | 'versionHistory' | 'snapshot'>('preview');
 
+  // Edit Contract Modal State
+  const [editingContrato, setEditingContrato] = useState<ContratoData | null>(null);
+
+  // Versions History State
+  const [versoes, setVersoes] = useState<ContratoVersion[]>([]);
+  const [loadingVersoes, setLoadingVersoes] = useState(false);
+  const [selectedVersionPreview, setSelectedVersionPreview] = useState<ContratoVersion | null>(null);
+
   // Upload Signed PDF
   const [uploadingPdf, setUploadingPdf] = useState(false);
 
@@ -60,10 +71,31 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
     loadData();
   }, [targetContractId]);
 
+  // Load versions whenever activeContrato changes or versionHistory tab is opened
+  useEffect(() => {
+    if (activeContrato?.id && activeTab === 'versionHistory') {
+      const fetchVersoes = async () => {
+        setLoadingVersoes(true);
+        const vers = await getVersoesContrato(activeContrato.id);
+        setVersoes(vers);
+        setLoadingVersoes(false);
+      };
+      fetchVersoes();
+    }
+  }, [activeContrato?.id, activeTab]);
+
   const handleDuplicate = async (id: string) => {
     const newId = await duplicarContrato(id, currentUser?.uid || 'user');
     await loadData();
     onNavigate?.('contratos', newId);
+  };
+
+  const handleSavedEdit = (updated: ContratoData) => {
+    setContratos(prev => prev.map(c => (c.id === updated.id ? updated : c)));
+    if (activeContrato && activeContrato.id === updated.id) {
+      setActiveContrato(updated);
+    }
+    loadData();
   };
 
   const handleUploadSigned = async (e: React.ChangeEvent<HTMLInputElement>, id: string) => {
@@ -203,28 +235,35 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
                     <td className="py-3 px-4 text-right space-x-1">
                       <button
                         onClick={() => setActiveContrato(c)}
-                        className="p-1.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 rounded-md text-zinc-700 dark:text-zinc-300 font-medium inline-flex items-center gap-1"
+                        className="p-1.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 rounded-md text-zinc-700 dark:text-zinc-300 font-medium inline-flex items-center gap-1 cursor-pointer"
                         title="Ver Detalhes"
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
                       <button
+                        onClick={() => setEditingContrato(c)}
+                        className="p-1.5 bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/60 rounded-md transition-colors cursor-pointer"
+                        title="Editar Contrato"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
                         onClick={() => exportarPDF(c)}
-                        className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-md"
+                        className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-md cursor-pointer"
                         title="Exportar PDF"
                       >
                         <Download className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => handleDuplicate(c.id!)}
-                        className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md"
+                        className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md cursor-pointer"
                         title="Duplicar Contrato"
                       >
                         <Copy className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => onNavigate?.('aditivos')}
-                        className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-md"
+                        className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-md cursor-pointer"
                         title="Criar Aditivo"
                       >
                         <Layers className="w-3.5 h-3.5" />
@@ -251,16 +290,24 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
                   {activeContrato.titulo}
                 </h3>
               </div>
-              <button onClick={() => setActiveContrato(null)} className="p-1 text-zinc-400 hover:text-zinc-600">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setEditingContrato(activeContrato)}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  <Edit3 className="w-3.5 h-3.5" /> Editar Contrato
+                </button>
+                <button onClick={() => setActiveContrato(null)} className="p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Tabs */}
             <div className="flex items-center gap-2 border-b border-zinc-200 dark:border-zinc-800 text-xs font-semibold">
               <button
                 onClick={() => setActiveTab('preview')}
-                className={`pb-2 px-3 border-b-2 transition-all ${
+                className={`pb-2 px-3 border-b-2 transition-all cursor-pointer ${
                   activeTab === 'preview'
                     ? 'border-indigo-600 text-indigo-600'
                     : 'border-transparent text-zinc-400'
@@ -270,7 +317,7 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
               </button>
               <button
                 onClick={() => setActiveTab('snapshot')}
-                className={`pb-2 px-3 border-b-2 transition-all ${
+                className={`pb-2 px-3 border-b-2 transition-all cursor-pointer ${
                   activeTab === 'snapshot'
                     ? 'border-indigo-600 text-indigo-600'
                     : 'border-transparent text-zinc-400'
@@ -280,7 +327,7 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
               </button>
               <button
                 onClick={() => setActiveTab('versionHistory')}
-                className={`pb-2 px-3 border-b-2 transition-all ${
+                className={`pb-2 px-3 border-b-2 transition-all cursor-pointer ${
                   activeTab === 'versionHistory'
                     ? 'border-indigo-600 text-indigo-600'
                     : 'border-transparent text-zinc-400'
@@ -293,16 +340,22 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
             {/* Tab 1: Preview A4 */}
             {activeTab === 'preview' && (
               <div className="space-y-4">
-                <div className="flex justify-end gap-2">
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    onClick={() => setEditingContrato(activeContrato)}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" /> Editar Minuta
+                  </button>
                   <button
                     onClick={() => exportarPDF(activeContrato)}
-                    className="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg flex items-center gap-1.5"
+                    className="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" /> PDF
                   </button>
                   <button
                     onClick={() => exportarDOCX(activeContrato)}
-                    className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg flex items-center gap-1.5"
+                    className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" /> DOCX
                   </button>
@@ -354,21 +407,121 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
             {/* Tab 3: Versions */}
             {activeTab === 'versionHistory' && (
               <div className="space-y-3 text-xs">
-                <p className="font-bold text-zinc-800 dark:text-zinc-200">
-                  Histórico de Versões e Minutas Registradas
-                </p>
-
-                <div className="p-3 bg-zinc-50 dark:bg-zinc-800 border rounded-lg flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-zinc-100 dark:border-zinc-800">
                   <div>
-                    <p className="font-bold">Versão 1.0 (Atual)</p>
-                    <p className="text-[11px] text-zinc-400">Criado em {new Date(activeContrato.createdAt).toLocaleString('pt-BR')}</p>
+                    <p className="font-bold text-zinc-800 dark:text-zinc-200">
+                      Histórico de Versões e Auditoria de Minutas
+                    </p>
+                    <p className="text-[11px] text-zinc-400">
+                      Cada edição registra snapshot auditável com data, autor e motivo da alteração.
+                    </p>
                   </div>
-                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded">Ativa</span>
+                  <button
+                    onClick={() => setEditingContrato(activeContrato)}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg flex items-center gap-1 text-[11px] cursor-pointer self-start sm:self-auto"
+                  >
+                    <Edit3 className="w-3 h-3" /> Criar Nova Versão (Editar)
+                  </button>
                 </div>
+
+                {loadingVersoes ? (
+                  <div className="text-center py-6 text-zinc-400 flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                    Carregando versões do contrato...
+                  </div>
+                ) : versoes.length === 0 ? (
+                  <div className="p-3 bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg flex items-center justify-between">
+                    <div>
+                      <p className="font-bold">Versão {activeContrato.versaoAtual || 1}.0 (Atual)</p>
+                      <p className="text-[11px] text-zinc-400">Criado em {new Date(activeContrato.createdAt).toLocaleString('pt-BR')}</p>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">Criação inicial do contrato</p>
+                    </div>
+                    <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold rounded text-[10px]">
+                      Ativa
+                    </span>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {versoes.map((v, i) => (
+                      <div
+                        key={v.id || i}
+                        className={`p-3.5 border rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                          v.versao === (activeContrato.versaoAtual || 1)
+                            ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-300 dark:border-blue-800'
+                            : 'bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs text-zinc-900 dark:text-zinc-100">
+                              Versão {v.versao}.0
+                            </span>
+                            {v.versao === (activeContrato.versaoAtual || 1) ? (
+                              <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold rounded text-[10px]">
+                                Versão Atual
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 font-medium rounded text-[10px]">
+                                Histórica
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                            Gravado em {new Date(v.createdAt).toLocaleString('pt-BR')} • {v.motivoAlteracao || 'Edição de contrato'}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedVersionPreview(selectedVersionPreview?.id === v.id ? null : v)}
+                            className="px-2.5 py-1 text-[11px] font-semibold bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-700 flex items-center gap-1 cursor-pointer transition-colors"
+                          >
+                            <Eye className="w-3 h-3" />
+                            {selectedVersionPreview?.id === v.id ? 'Ocultar Minuta' : 'Ver Minuta'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Version Preview Section */}
+                {selectedVersionPreview && (
+                  <div className="p-4 bg-zinc-100 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-xl space-y-2 mt-3 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-zinc-800 dark:text-zinc-200">
+                        Minuta da Versão {selectedVersionPreview.versao}.0 ({selectedVersionPreview.motivoAlteracao})
+                      </span>
+                      <button
+                        onClick={() => setSelectedVersionPreview(null)}
+                        className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <textarea
+                      readOnly
+                      rows={8}
+                      value={selectedVersionPreview.conteudoFinal}
+                      className="w-full font-mono text-[11px] bg-white dark:bg-zinc-900 border rounded-lg p-3 text-zinc-800 dark:text-zinc-200 leading-relaxed"
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
+      )}
+
+      {/* EDIT CONTRATO MODAL */}
+      {editingContrato && (
+        <EditContratoModal
+          isOpen={Boolean(editingContrato)}
+          contrato={editingContrato}
+          onClose={() => setEditingContrato(null)}
+          onSaved={handleSavedEdit}
+        />
       )}
     </div>
   );
