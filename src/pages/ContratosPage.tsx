@@ -15,9 +15,11 @@ import {
   FileCode,
   Edit2,
   Edit3,
-  Loader2
+  Loader2,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
-import { getContratos, duplicarContrato, uploadContratoAssinado, getVersoesContrato } from '../services/contratosService';
+import { getContratos, duplicarContrato, uploadContratoAssinado, getVersoesContrato, deleteContrato } from '../services/contratosService';
 import { exportarPDF, exportarDOCX } from '../services/documentExportService';
 import { ContratoData, ContratoVersion } from '../types';
 import { A4DocumentPreview } from '../components/A4DocumentPreview';
@@ -54,6 +56,11 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
 
   // Upload Signed PDF
   const [uploadingPdf, setUploadingPdf] = useState(false);
+
+  // Deletion State
+  const [contratoParaExcluir, setContratoParaExcluir] = useState<ContratoData | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
+  const [feedbackMsg, setFeedbackMsg] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -114,6 +121,42 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
     }
   };
 
+  const handleConfirmDelete = async () => {
+    if (!contratoParaExcluir?.id) return;
+    setExcluindo(true);
+    try {
+      const num = contratoParaExcluir.numero;
+      const tit = contratoParaExcluir.titulo;
+      await deleteContrato(contratoParaExcluir.id);
+
+      if (activeContrato?.id === contratoParaExcluir.id) {
+        setActiveContrato(null);
+      }
+      if (editingContrato?.id === contratoParaExcluir.id) {
+        setEditingContrato(null);
+      }
+
+      setContratoParaExcluir(null);
+      setFeedbackMsg({
+        tipo: 'sucesso',
+        texto: `Contrato nº ${num} ("${tit}") foi excluído permanentemente com sucesso.`
+      });
+      await loadData();
+
+      setTimeout(() => {
+        setFeedbackMsg(null);
+      }, 5000);
+    } catch (err: any) {
+      console.error('Erro ao excluir contrato:', err);
+      setFeedbackMsg({
+        tipo: 'erro',
+        texto: err.message || 'Erro ao excluir contrato do banco de dados.'
+      });
+    } finally {
+      setExcluindo(false);
+    }
+  };
+
   // Search logic (Number, CPF, CNPJ, Name)
   const filteredContratos = contratos.filter(c => {
     const q = search.toLowerCase();
@@ -156,6 +199,33 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
           Gerar Novo Contrato
         </button>
       </div>
+
+      {/* Feedback Banner */}
+      {feedbackMsg && (
+        <div
+          className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs font-semibold animate-in fade-in ${
+            feedbackMsg.tipo === 'sucesso'
+              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+              : 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {feedbackMsg.tipo === 'sucesso' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span>{feedbackMsg.texto}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFeedbackMsg(null)}
+            className="p-1 hover:opacity-75 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Search & Filter Controls */}
       <div className="flex flex-col sm:flex-row items-center gap-3">
@@ -268,6 +338,13 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
                       >
                         <Layers className="w-3.5 h-3.5" />
                       </button>
+                      <button
+                        onClick={() => setContratoParaExcluir(c)}
+                        className="p-1.5 bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-md cursor-pointer transition-colors"
+                        title="Excluir Contrato"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -296,6 +373,13 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
                   className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
                 >
                   <Edit3 className="w-3.5 h-3.5" /> Editar Contrato
+                </button>
+                <button
+                  onClick={() => setContratoParaExcluir(activeContrato)}
+                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                  title="Excluir este contrato permanentemente"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Excluir Contrato
                 </button>
                 <button onClick={() => setActiveContrato(null)} className="p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer">
                   <X className="w-5 h-5" />
@@ -521,7 +605,93 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
           contrato={editingContrato}
           onClose={() => setEditingContrato(null)}
           onSaved={handleSavedEdit}
+          onDeleted={(deletedId) => {
+            if (activeContrato?.id === deletedId) {
+              setActiveContrato(null);
+            }
+            setEditingContrato(null);
+            setFeedbackMsg({
+              tipo: 'sucesso',
+              texto: 'Contrato excluído permanentemente com sucesso.'
+            });
+            loadData();
+          }}
         />
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE CONTRATO */}
+      {contratoParaExcluir && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 text-xs text-zinc-800 dark:text-zinc-200">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 rounded-xl shrink-0 border border-rose-200 dark:border-rose-900/60">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-extrabold text-sm text-zinc-900 dark:text-zinc-100">
+                  Excluir Contrato Finalizado?
+                </h3>
+                <p className="text-zinc-500 dark:text-zinc-400 text-xs">
+                  Esta ação é irreversível. O contrato, suas minutas e todo o histórico de versões auditáveis serão permanentemente excluídos do banco de dados.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/80 space-y-1.5 text-[11px]">
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400 font-medium">Número do Contrato:</span>
+                <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{contratoParaExcluir.numero}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400 font-medium">Título:</span>
+                <span className="font-semibold text-zinc-900 dark:text-zinc-100 truncate max-w-[220px]" title={contratoParaExcluir.titulo}>
+                  {contratoParaExcluir.titulo}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400 font-medium">Status Atual:</span>
+                <span className="font-bold px-2 py-0.5 rounded text-[10px] bg-zinc-200 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200">
+                  {contratoParaExcluir.status}
+                </span>
+              </div>
+              {contratoParaExcluir.contractDataSnapshot?.contratanteSnapshot?.nome && (
+                <div className="flex items-center justify-between pt-1 border-t border-zinc-200/60 dark:border-zinc-700/60">
+                  <span className="text-zinc-400 font-medium">Contratante:</span>
+                  <span className="truncate max-w-[220px] font-medium">{contratoParaExcluir.contractDataSnapshot.contratanteSnapshot.nome}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={excluindo}
+                onClick={() => setContratoParaExcluir(null)}
+                className="px-4 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 cursor-pointer transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={excluindo}
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-50"
+              >
+                {excluindo ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Excluindo...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Sim, Excluir Contrato
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

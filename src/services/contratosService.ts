@@ -215,5 +215,16 @@ export async function uploadContratoAssinado(id: string, fileOrUrl: File | strin
 }
 
 export async function deleteContrato(id: string): Promise<void> {
+  // 1. Excluir documento principal do contrato
   await deleteDoc(doc(db, COLLECTION_NAME, id));
+
+  // 2. Limpar histórico de versões associadas
+  try {
+    const qVers = query(collection(db, VERSIONS_COLLECTION), where('contratoId', '==', id));
+    const snapVers = await getDocs(qVers);
+    const deletePromises = snapVers.docs.map(docSnap => deleteDoc(doc(db, VERSIONS_COLLECTION, docSnap.id)));
+    await Promise.all(deletePromises);
+  } catch (err) {
+    console.warn('Aviso: Não foi possível excluir as versões associadas ao contrato:', err);
+  }
 }

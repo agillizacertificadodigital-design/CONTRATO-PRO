@@ -20,7 +20,7 @@ import {
 import { getModelos } from '../services/modelosService';
 import { getContratantes } from '../services/contratantesService';
 import { getContratados } from '../services/contratadosService';
-import { createContrato } from '../services/contratosService';
+import { createContrato, deleteContrato } from '../services/contratosService';
 import { exportarPDF, exportarDOCX } from '../services/documentExportService';
 import { renderizarContrato } from '../utils/templateEngine';
 import { ModeloContrato, PartesDados, ClausulaModel, ContratoData } from '../types';
@@ -98,6 +98,27 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
   // Finalization State
   const [savingContract, setSavingContract] = useState(false);
   const [createdContratoId, setCreatedContratoId] = useState<string | null>(null);
+  const [deletingCreated, setDeletingCreated] = useState(false);
+
+  const handleDeleteCreatedContract = async () => {
+    if (!createdContratoId) return;
+    const confirmDelete = window.confirm(
+      'Tem certeza que deseja excluir permanentemente este contrato recém-gerado? Esta ação não pode ser desfeita.'
+    );
+    if (!confirmDelete) return;
+
+    setDeletingCreated(true);
+    try {
+      await deleteContrato(createdContratoId);
+      alert('Contrato excluído com sucesso.');
+      onNavigate('contratos');
+    } catch (err: any) {
+      console.error('Erro ao excluir contrato:', err);
+      alert('Erro ao excluir contrato: ' + (err.message || 'Erro inesperado'));
+    } finally {
+      setDeletingCreated(false);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -1067,13 +1088,36 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
                 }}
               />
 
-              <div className="flex justify-center pt-4">
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
                 <button
+                  type="button"
                   onClick={() => onNavigate('contratos', createdContratoId || undefined)}
-                  className="px-6 py-2.5 bg-zinc-900 text-white font-bold text-xs rounded-xl"
+                  className="px-6 py-2.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-800 font-bold text-xs rounded-xl shadow-xs cursor-pointer transition-colors"
                 >
                   Ir para Lista de Contratos
                 </button>
+
+                {createdContratoId && (
+                  <button
+                    type="button"
+                    disabled={deletingCreated}
+                    onClick={handleDeleteCreatedContract}
+                    className="px-4 py-2.5 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    title="Excluir este contrato permanentemente"
+                  >
+                    {deletingCreated ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Excluindo...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Excluir Contrato
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           )}
