@@ -68,6 +68,15 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
     dataFim: '',
     haverMulta: 'SIM',
     valorMulta: 'R$ 200,00',
+    prazoAvisoDias: '30',
+    prazoAvisoExtenso: 'trinta dias',
+    localServicoMesmoEndereco: true,
+    localServicoLogradouro: '',
+    localServicoNumero: '',
+    localServicoBairro: '',
+    localServicoCep: '',
+    localServicoCidade: '',
+    localServicoUf: '',
     foroCidade: '',
     foroEstado: '',
     testemunha1Nome: '',
@@ -110,13 +119,19 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
     fetchData();
   }, []);
 
-  // Update foro when contratante is selected
+  // Update foro and local de serviço when contratante is selected
   useEffect(() => {
     if (selectedContratante) {
       setDadosVariaveis(prev => ({
         ...prev,
         foroCidade: selectedContratante.cidade || prev.foroCidade || 'São Paulo',
-        foroEstado: selectedContratante.estado || prev.foroEstado || 'SP'
+        foroEstado: selectedContratante.estado || prev.foroEstado || 'SP',
+        localServicoLogradouro: prev.localServicoLogradouro || selectedContratante.endereco || '',
+        localServicoNumero: prev.localServicoNumero || selectedContratante.numero || 's/n',
+        localServicoBairro: prev.localServicoBairro || selectedContratante.bairro || '',
+        localServicoCep: prev.localServicoCep || selectedContratante.cep || '',
+        localServicoCidade: prev.localServicoCidade || selectedContratante.cidade || 'São Paulo',
+        localServicoUf: prev.localServicoUf || selectedContratante.estado || 'SP',
       }));
     }
   }, [selectedContratante]);
@@ -147,6 +162,41 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
     }
 
     setCurrentStep(5);
+  };
+
+  // Auto-resolve any missing fields and refresh preview
+  const handleAutoResolverPendencias = () => {
+    if (!selectedModelo) return;
+
+    const updatedDados = {
+      ...dadosVariaveis,
+      prazoAvisoDias: dadosVariaveis.prazoAvisoDias || '30',
+      prazoAvisoExtenso: dadosVariaveis.prazoAvisoExtenso || 'trinta dias',
+      localServicoLogradouro: dadosVariaveis.localServicoLogradouro || selectedContratante?.endereco || 'No endereço do Contratante',
+      localServicoNumero: dadosVariaveis.localServicoNumero || selectedContratante?.numero || 's/n',
+      localServicoBairro: dadosVariaveis.localServicoBairro || selectedContratante?.bairro || 'Centro',
+      localServicoCep: dadosVariaveis.localServicoCep || selectedContratante?.cep || '00000-000',
+      localServicoCidade: dadosVariaveis.localServicoCidade || selectedContratante?.cidade || 'São Paulo',
+      localServicoUf: dadosVariaveis.localServicoUf || selectedContratante?.estado || 'SP',
+      foroCidade: dadosVariaveis.foroCidade || selectedContratante?.cidade || 'São Paulo',
+      foroEstado: dadosVariaveis.foroEstado || selectedContratante?.estado || 'SP',
+      valorDiaria: dadosVariaveis.valorDiaria || 180,
+      formaPagamento: dadosVariaveis.formaPagamento || 'PIX'
+    };
+
+    setDadosVariaveis(updatedDados);
+
+    const res = renderizarContrato(
+      selectedModelo,
+      selectedContratante,
+      selectedContratado,
+      updatedDados,
+      updatedDados.foroCidade,
+      updatedDados.foroEstado
+    );
+
+    setRenderedText(res.conteudoFinal);
+    setPendencias(res.pendencias);
   };
 
   const handleSaveFinalContract = async () => {
@@ -639,7 +689,7 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
                   </div>
                 </div>
 
-                {/* Item 17, 18, 19: Prazo, Multa, Foro */}
+                {/* Item 17, 18, 19, 20: Prazo, Multa, Foro e Local */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
                   <div>
                     <label className="font-bold block mb-1">17. Prazo do Contrato</label>
@@ -665,8 +715,19 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
                       type="text"
                       value={dadosVariaveis.valorMulta}
                       onChange={e => setDadosVariaveis({ ...dadosVariaveis, valorMulta: e.target.value })}
-                      className="w-full border rounded-lg p-2 bg-white dark:bg-zinc-800"
+                      className="w-full border rounded-lg p-2 bg-white dark:bg-zinc-800 mb-2"
                     />
+                    <div className="flex gap-1 items-center">
+                      <span className="text-[11px] text-zinc-500 font-semibold">Aviso prévio:</span>
+                      <input
+                        type="text"
+                        placeholder="30"
+                        value={dadosVariaveis.prazoAvisoDias}
+                        onChange={e => setDadosVariaveis({ ...dadosVariaveis, prazoAvisoDias: e.target.value })}
+                        className="w-14 border rounded p-1 text-xs bg-white dark:bg-zinc-800 text-center"
+                      />
+                      <span className="text-[11px] text-zinc-500">dias</span>
+                    </div>
                   </div>
 
                   <div>
@@ -685,6 +746,65 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
                         value={dadosVariaveis.foroEstado}
                         onChange={e => setDadosVariaveis({ ...dadosVariaveis, foroEstado: e.target.value })}
                         className="w-1/4 border rounded-lg p-2 bg-white dark:bg-zinc-800"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Local da Prestação dos Serviços */}
+                <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-zinc-800 dark:text-zinc-200 block">
+                      20. Local da Prestação dos Serviços
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={dadosVariaveis.localServicoMesmoEndereco !== false}
+                        onChange={e => {
+                          const checked = e.target.checked;
+                          setDadosVariaveis({
+                            ...dadosVariaveis,
+                            localServicoMesmoEndereco: checked,
+                            localServicoLogradouro: checked ? (selectedContratante?.endereco || '') : dadosVariaveis.localServicoLogradouro,
+                            localServicoNumero: checked ? (selectedContratante?.numero || 's/n') : dadosVariaveis.localServicoNumero,
+                            localServicoBairro: checked ? (selectedContratante?.bairro || '') : dadosVariaveis.localServicoBairro,
+                            localServicoCep: checked ? (selectedContratante?.cep || '') : dadosVariaveis.localServicoCep,
+                            localServicoCidade: checked ? (selectedContratante?.cidade || '') : dadosVariaveis.localServicoCidade,
+                            localServicoUf: checked ? (selectedContratante?.estado || '') : dadosVariaveis.localServicoUf,
+                          });
+                        }}
+                      />
+                      Mesmo endereço do contratante
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                    <div className="sm:col-span-2">
+                      <input
+                        type="text"
+                        placeholder="Logradouro (Rua, Av.)"
+                        value={dadosVariaveis.localServicoLogradouro}
+                        onChange={e => setDadosVariaveis({ ...dadosVariaveis, localServicoLogradouro: e.target.value })}
+                        className="w-full border rounded-lg p-2 text-xs bg-white dark:bg-zinc-800"
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="text"
+                        placeholder="Número"
+                        value={dadosVariaveis.localServicoNumero}
+                        onChange={e => setDadosVariaveis({ ...dadosVariaveis, localServicoNumero: e.target.value })}
+                        className="w-full border rounded-lg p-2 text-xs bg-white dark:bg-zinc-800"
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="text"
+                        placeholder="Bairro"
+                        value={dadosVariaveis.localServicoBairro}
+                        onChange={e => setDadosVariaveis({ ...dadosVariaveis, localServicoBairro: e.target.value })}
+                        className="w-full border rounded-lg p-2 text-xs bg-white dark:bg-zinc-800"
                       />
                     </div>
                   </div>
@@ -727,12 +847,22 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
 
               {/* Pendencias Warning (Item 55) */}
               {pendencias.length > 0 && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1">
-                  <p className="font-bold flex items-center gap-1">
-                    <AlertCircle className="w-4 h-4" />
-                    PENDÊNCIAS DO CONTRATO ({pendencias.length})
-                  </p>
-                  <ul className="list-disc list-inside">
+                <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-300 space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <p className="font-bold flex items-center gap-1.5 text-amber-900 dark:text-amber-200">
+                      <AlertCircle className="w-4 h-4" />
+                      PENDÊNCIAS DO CONTRATO ({pendencias.length})
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleAutoResolverPendencias}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shadow-xs transition-colors"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Preencher e Resolver Automaticamente
+                    </button>
+                  </div>
+                  <ul className="list-disc list-inside space-y-0.5 max-h-36 overflow-y-auto">
                     {pendencias.map((p, idx) => (
                       <li key={idx}>{p}</li>
                     ))}
