@@ -3,9 +3,32 @@ import path from 'path';
 import multer from 'multer';
 import mammoth from 'mammoth';
 import * as pdfParseModule from 'pdf-parse';
-const pdfParse = (pdfParseModule as any).default || pdfParseModule;
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
+
+// Universal PDF extractor handling class-based PDFParse or functional exports
+async function extractTextFromPdf(buffer: Buffer): Promise<string> {
+  try {
+    const mod: any = pdfParseModule;
+    if (mod && mod.PDFParse) {
+      const parser = new mod.PDFParse({ data: buffer });
+      const res = await parser.getText();
+      return res?.text || '';
+    }
+    if (typeof mod.default === 'function') {
+      const res = await mod.default(buffer);
+      return res?.text || '';
+    }
+    if (typeof mod === 'function') {
+      const res = await mod(buffer);
+      return res?.text || '';
+    }
+  } catch (err) {
+    console.error('[PDF Parse] Erro ao extrair texto do PDF:', err);
+    throw err;
+  }
+  throw new Error('Não foi possível inicializar o leitor de PDF.');
+}
 
 const upload = multer({ limits: { fileSize: 15 * 1024 * 1024 } }); // 15MB limit
 
@@ -30,8 +53,16 @@ function getGeminiClient() {
   });
 }
 
-// Fallback chain for basic text/JSON AI tasks
-const GEMINI_MODELS = ['gemini-3.7-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+// Fallback chain for basic text/JSON AI tasks, prioritizing current high-availability models
+const GEMINI_MODELS = [
+  'gemini-3.6-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-flash-lite-latest',
+  'gemini-3.1-flash-lite',
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-flash-latest',
+];
 
 async function callGeminiWithRetry(options: {
   contents: string;
@@ -56,34 +87,199 @@ async function callGeminiWithRetry(options: {
       } catch (err: any) {
         lastError = err;
         const errCode = err?.status || err?.code || err?.error?.code;
-        const errMsg = err?.message || JSON.stringify(err);
-        const isTransient =
+        const errMsg = err?.message || (typeof err === 'string' ? err : JSON.stringify(err));
+        const isHighDemand =
           errCode === 503 ||
-          errCode === 429 ||
-          errCode === 500 ||
           errCode === 'UNAVAILABLE' ||
-          errCode === 'RESOURCE_EXHAUSTED' ||
           errMsg.includes('high demand') ||
           errMsg.includes('UNAVAILABLE') ||
-          errMsg.includes('temporarily unavailable') ||
           errMsg.includes('spikes in demand') ||
-          errMsg.includes('rate limit') ||
-          errMsg.includes('fetch failed');
+          errMsg.includes('temporarily unavailable');
+        const isRateLimit =
+          errCode === 429 ||
+          errCode === 'RESOURCE_EXHAUSTED' ||
+          errMsg.includes('rate limit');
 
-        console.warn(`[Gemini API] Tentativa ${attempt} no modelo '${model}' falhou: ${errMsg}. Transitório: ${isTransient}`);
+        console.warn(`[Gemini API] Modelo '${model}' (tentativa ${attempt}): ${errMsg}`);
 
-        if (isTransient) {
-          const delayMs = attempt * 800 + Math.floor(Math.random() * 400);
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        // If the model is experiencing high demand (503), immediately failover to next model
+        if (isHighDemand) {
+          break;
+        }
+
+        if (isRateLimit && attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
         } else {
-          // If error is not transient (e.g. invalid request), break to next model
           break;
         }
       }
     }
   }
 
-  throw lastError || new Error('O serviço de IA está temporariamente sobrecarregado. Por favor, tente novamente em instantes.');
+  const userFacingError =
+    lastError?.error?.message ||
+    lastError?.message ||
+    'O serviço de IA está temporariamente com alta demanda. Por favor, tente novamente em alguns instantes.';
+
+  throw new Error(userFacingError);
+}
+
+// Heuristic fallback parser for uploaded documents (ensures upload succeeds even during AI API outages)
+function parseDocumentLocally(rawText: string, originalName: string) {
+  const cleanName = (originalName || 'Contrato Importado')
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[-_]/g, ' ')
+    .trim();
+
+  // 1. Title extraction
+  const lines = rawText
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  let titulo = cleanName.toUpperCase();
+  for (const line of lines.slice(0, 10)) {
+    if (
+      /^(CONTRATO|INSTRUMENTO PARTICULAR|TERMO DE|ACORDO|ADITIVO)\b/i.test(line) &&
+      line.length < 140
+    ) {
+      titulo = line.toUpperCase();
+      break;
+    }
+  }
+
+  // 2. Category inference
+  const lower = rawText.toLowerCase();
+  let categoria = 'Prestação de Serviços';
+  if (lower.includes('locação') || lower.includes('aluguel') || lower.includes('locador') || lower.includes('locatário')) {
+    categoria = 'Locação de Imóveis';
+  } else if (lower.includes('trabalho') || lower.includes('empregado') || lower.includes('clt') || lower.includes('salário')) {
+    categoria = 'Trabalhista';
+  } else if (lower.includes('compra e venda') || lower.includes('vendedor') || lower.includes('comprador')) {
+    categoria = 'Compra e Venda';
+  } else if (lower.includes('confidencialidade') || lower.includes('sigilo') || lower.includes('nda')) {
+    categoria = 'Confidencialidade';
+  } else if (lower.includes('parceria') || lower.includes('sociedade') || lower.includes('memorando')) {
+    categoria = 'Parceria Comercial';
+  }
+
+  // 3. Clause extraction
+  const clauseRegex = /(?:^|\n\s*)(CL[AÁ]USULA\s+[A-Z0-9ªº\.\-]+(?:\s*[\:\–\-]\s*[^\n]+)?)/gi;
+  const clauseMatches: { index: number; title: string }[] = [];
+  let m: RegExpExecArray | null;
+
+  while ((m = clauseRegex.exec(rawText)) !== null) {
+    clauseMatches.push({
+      index: m.index,
+      title: m[1].trim()
+    });
+  }
+
+  const clausulas: { titulo: string; conteudo: string }[] = [];
+
+  if (clauseMatches.length > 0) {
+    for (let i = 0; i < clauseMatches.length; i++) {
+      const current = clauseMatches[i];
+      const nextIndex = i < clauseMatches.length - 1 ? clauseMatches[i + 1].index : rawText.length;
+      const fullSection = rawText.slice(current.index, nextIndex).trim();
+
+      const firstLineEnd = fullSection.indexOf('\n');
+      if (firstLineEnd > -1) {
+        const line1 = fullSection.slice(0, firstLineEnd).trim();
+        const rest = fullSection.slice(firstLineEnd).trim();
+        clausulas.push({
+          titulo: line1.toUpperCase(),
+          conteudo: rest || fullSection
+        });
+      } else {
+        clausulas.push({
+          titulo: current.title.toUpperCase(),
+          conteudo: fullSection
+        });
+      }
+    }
+  } else {
+    const paragraphs = rawText
+      .split(/\n\s*\n/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 20);
+
+    if (paragraphs.length > 0) {
+      paragraphs.forEach((p, idx) => {
+        clausulas.push({
+          titulo: `CLÁUSULA ${idx + 1}ª - DISPOSIÇÕES GERAIS`,
+          conteudo: p
+        });
+      });
+    } else {
+      clausulas.push({
+        titulo: 'CLÁUSULA ÚNICA - DO OBJETO E DISPOSIÇÕES',
+        conteudo: rawText
+      });
+    }
+  }
+
+  // 4. Variables Identification
+  const variaveisIdentificadas: { chave: string; label: string; exemplo?: string }[] = [];
+  const camposDinamicosRecomendados: { chave: string; label: string; tipo: string; obrigatorio: boolean }[] = [];
+  let conteudoConvertido = rawText;
+
+  const cpfRegex = /\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g;
+  const cpfs = [...new Set(rawText.match(cpfRegex) || [])];
+  if (cpfs[0]) {
+    variaveisIdentificadas.push({ chave: 'contratante.cpf', label: 'CPF do Contratante', exemplo: cpfs[0] });
+    camposDinamicosRecomendados.push({ chave: 'contratante.cpf', label: 'CPF do Contratante', tipo: 'cpf', obrigatorio: true });
+    conteudoConvertido = conteudoConvertido.replaceAll(cpfs[0], '{{contratante.cpf}}');
+  }
+  if (cpfs[1]) {
+    variaveisIdentificadas.push({ chave: 'contratado.cpf', label: 'CPF do Contratado', exemplo: cpfs[1] });
+    camposDinamicosRecomendados.push({ chave: 'contratado.cpf', label: 'CPF do Contratado', tipo: 'cpf', obrigatorio: true });
+    conteudoConvertido = conteudoConvertido.replaceAll(cpfs[1], '{{contratado.cpf}}');
+  }
+
+  const cnpjRegex = /\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/g;
+  const cnpjs = [...new Set(rawText.match(cnpjRegex) || [])];
+  if (cnpjs[0]) {
+    variaveisIdentificadas.push({ chave: 'contratante.cnpj', label: 'CNPJ do Contratante', exemplo: cnpjs[0] });
+    camposDinamicosRecomendados.push({ chave: 'contratante.cnpj', label: 'CNPJ do Contratante', tipo: 'cnpj', obrigatorio: true });
+    conteudoConvertido = conteudoConvertido.replaceAll(cnpjs[0], '{{contratante.cnpj}}');
+  }
+  if (cnpjs[1]) {
+    variaveisIdentificadas.push({ chave: 'contratado.cnpj', label: 'CNPJ do Contratado', exemplo: cnpjs[1] });
+    camposDinamicosRecomendados.push({ chave: 'contratado.cnpj', label: 'CNPJ do Contratado', tipo: 'cnpj', obrigatorio: true });
+    conteudoConvertido = conteudoConvertido.replaceAll(cnpjs[1], '{{contratado.cnpj}}');
+  }
+
+  const valorRegex = /R\$\s*[\d\.\,]+/g;
+  const valores = [...new Set(rawText.match(valorRegex) || [])];
+  if (valores[0]) {
+    variaveisIdentificadas.push({ chave: 'contrato.valor', label: 'Valor do Contrato', exemplo: valores[0] });
+    camposDinamicosRecomendados.push({ chave: 'contrato.valor', label: 'Valor do Contrato', tipo: 'moeda', obrigatorio: true });
+    conteudoConvertido = conteudoConvertido.replaceAll(valores[0], '{{contrato.valor}}');
+  }
+
+  if (!variaveisIdentificadas.some((v) => v.chave === 'contratante.nome')) {
+    variaveisIdentificadas.unshift({ chave: 'contratante.nome', label: 'Nome do Contratante' });
+    camposDinamicosRecomendados.unshift({ chave: 'contratante.nome', label: 'Nome do Contratante', tipo: 'texto', obrigatorio: true });
+  }
+  if (!variaveisIdentificadas.some((v) => v.chave === 'contratado.nome')) {
+    variaveisIdentificadas.push({ chave: 'contratado.nome', label: 'Nome do Contratado' });
+    camposDinamicosRecomendados.push({ chave: 'contratado.nome', label: 'Nome do Contratado', tipo: 'texto', obrigatorio: true });
+  }
+  if (!variaveisIdentificadas.some((v) => v.chave === 'contrato.dataInicio')) {
+    variaveisIdentificadas.push({ chave: 'contrato.dataInicio', label: 'Data de Início' });
+    camposDinamicosRecomendados.push({ chave: 'contrato.dataInicio', label: 'Data de Início', tipo: 'data', obrigatorio: false });
+  }
+
+  return {
+    nomeModelo: titulo,
+    categoria,
+    descricao: `Modelo estruturado a partir do arquivo ${cleanName}`,
+    conteudoConvertido,
+    clausulas,
+    variaveisIdentificadas,
+    camposDinamicosRecomendados
+  };
 }
 
 // ------------------- API ROUTES -------------------
@@ -359,8 +555,7 @@ app.post('/api/ai/parse-imported-doc', upload.single('file'), async (req, res) =
       const result = await mammoth.extractRawText({ buffer: req.file.buffer });
       rawText = result.value;
     } else if (filename.endsWith('.pdf')) {
-      const pdfData = await pdfParse(req.file.buffer);
-      rawText = pdfData.text;
+      rawText = await extractTextFromPdf(req.file.buffer);
     } else {
       return res.status(400).json({ error: 'Formato inválido. Suportados: .docx, .doc, .pdf' });
     }
@@ -408,25 +603,22 @@ Retorne estritamente um JSON no seguinte formato:
   ]
 }`;
 
-    const response = await callGeminiWithRetry({
-      contents: prompt,
-      responseMimeType: 'application/json',
-    });
-
-    const resultText = response.text || '{}';
-    let parsed = {};
+    let parsed: any = null;
     try {
+      const response = await callGeminiWithRetry({
+        contents: prompt,
+        responseMimeType: 'application/json',
+      });
+
+      const resultText = response.text || '{}';
       parsed = JSON.parse(resultText);
-    } catch {
-      parsed = {
-        nomeModelo: req.file.originalname,
-        categoria: 'Geral',
-        descricao: 'Modelo importado de ' + req.file.originalname,
-        conteudoConvertido: rawText,
-        clausulas: [{ titulo: 'CONTEÚDO DO CONTRATO', conteudo: rawText }],
-        variaveisIdentificadas: [],
-        camposDinamicosRecomendados: []
-      };
+    } catch (aiErr: any) {
+      console.warn('[Doc Parse] IA indisponível ou com pico de demanda, utilizando análise estrutural heurística:', aiErr?.message || aiErr);
+      parsed = parseDocumentLocally(rawText, req.file.originalname);
+    }
+
+    if (!parsed || !parsed.clausulas || parsed.clausulas.length === 0) {
+      parsed = parseDocumentLocally(rawText, req.file.originalname);
     }
 
     return res.json({
