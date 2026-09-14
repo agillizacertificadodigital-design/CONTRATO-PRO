@@ -193,10 +193,33 @@ export async function getVersoesContrato(contratoId: string): Promise<ContratoVe
   }
 }
 
-export async function updateStatusContrato(id: string, status: StatusContrato, uid: string): Promise<void> {
+export async function updateStatusContrato(id: string, status: StatusContrato, uid: string = 'user'): Promise<void> {
+  const current = await getContratoById(id);
   const docRef = doc(db, COLLECTION_NAME, id);
+
+  let nextVersion = current?.versaoAtual || 1;
+  if (current && current.status !== status) {
+    nextVersion += 1;
+    try {
+      const versionRecord = sanitizeFirestoreData({
+        contratoId: id,
+        versao: nextVersion,
+        conteudoFinal: current.conteudoFinal || '',
+        dadosVariaveis: current.dadosVariaveis || {},
+        contractDataSnapshot: current.contractDataSnapshot || null,
+        motivoAlteracao: `Alteração de status de "${current.status || 'Rascunho'}" para "${status}"`,
+        createdBy: uid,
+        createdAt: new Date().toISOString()
+      });
+      await addDoc(collection(db, VERSIONS_COLLECTION), versionRecord);
+    } catch (verErr) {
+      console.warn('Não foi possível registrar histórico de alteração de status:', verErr);
+    }
+  }
+
   await updateDoc(docRef, {
     status,
+    versaoAtual: nextVersion,
     updatedBy: uid,
     updatedAt: new Date().toISOString()
   });

@@ -19,9 +19,9 @@ import {
   Trash2,
   AlertTriangle
 } from 'lucide-react';
-import { getContratos, duplicarContrato, uploadContratoAssinado, getVersoesContrato, deleteContrato } from '../services/contratosService';
+import { getContratos, duplicarContrato, uploadContratoAssinado, getVersoesContrato, deleteContrato, updateStatusContrato } from '../services/contratosService';
 import { exportarPDF, exportarDOCX } from '../services/documentExportService';
-import { ContratoData, ContratoVersion } from '../types';
+import { ContratoData, ContratoVersion, StatusContrato } from '../types';
 import { A4DocumentPreview } from '../components/A4DocumentPreview';
 import { EditContratoModal } from '../components/EditContratoModal';
 import { useAuth } from '../context/AuthContext';
@@ -61,6 +61,35 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
   const [contratoParaExcluir, setContratoParaExcluir] = useState<ContratoData | null>(null);
   const [excluindo, setExcluindo] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null);
+
+  // Quick Status Update State
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+
+  const handleUpdateStatus = async (contratoId: string, newStatus: StatusContrato) => {
+    if (!contratoId) return;
+    setUpdatingStatusId(contratoId);
+    try {
+      await updateStatusContrato(contratoId, newStatus, currentUser?.uid || 'user');
+      setContratos(prev => prev.map(c => (c.id === contratoId ? { ...c, status: newStatus } : c)));
+      if (activeContrato && activeContrato.id === contratoId) {
+        setActiveContrato(prev => (prev ? { ...prev, status: newStatus } : null));
+      }
+      setFeedbackMsg({
+        tipo: 'sucesso',
+        texto: `Status do contrato atualizado para "${newStatus}" com sucesso!`
+      });
+      setTimeout(() => setFeedbackMsg(null), 4000);
+    } catch (err: any) {
+      console.error('Erro ao atualizar status do contrato:', err);
+      setFeedbackMsg({
+        tipo: 'erro',
+        texto: err.message || 'Erro ao atualizar status do contrato no banco de dados.'
+      });
+      setTimeout(() => setFeedbackMsg(null), 5000);
+    } finally {
+      setUpdatingStatusId(null);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -289,20 +318,55 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
                       <p><span className="font-semibold text-zinc-500">Ctdo:</span> {c.contractDataSnapshot?.contratadoSnapshot?.nome || 'Informatizado'}</p>
                     </td>
                     <td className="py-3 px-4">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        c.status === 'Ativo'
-                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
-                          : c.status === 'Aguardando assinatura'
-                          ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
-                          : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
-                      }`}>
-                        {c.status}
-                      </span>
+                      {updatingStatusId === c.id ? (
+                        <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-zinc-500 py-1 px-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
+                          <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />
+                          Atualizando...
+                        </span>
+                      ) : (
+                        <select
+                          value={c.status}
+                          onChange={(e) => handleUpdateStatus(c.id!, e.target.value as StatusContrato)}
+                          aria-label={`Alterar status do contrato ${c.numero}`}
+                          className={`text-[11px] font-bold rounded-lg px-2.5 py-1 border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                            c.status === 'Ativo'
+                              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                              : c.status === 'Aguardando assinatura'
+                              ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-800'
+                              : c.status === 'Em revisão'
+                              ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800'
+                              : c.status === 'Encerrado'
+                              ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700'
+                              : c.status === 'Cancelado'
+                              ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                              : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                          }`}
+                          title="Clique para alterar o status do contrato"
+                        >
+                          <option value="Rascunho">Rascunho</option>
+                          <option value="Em revisão">Em revisão</option>
+                          <option value="Aguardando assinatura">Aguardando assinatura</option>
+                          <option value="Ativo">Ativo</option>
+                          <option value="Encerrado">Encerrado</option>
+                          <option value="Cancelado">Cancelado</option>
+                        </select>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-[11px] text-zinc-400">
                       {new Date(c.createdAt).toLocaleDateString('pt-BR')}
                     </td>
                     <td className="py-3 px-4 text-right space-x-1">
+                      {c.status !== 'Ativo' && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateStatus(c.id!, 'Ativo')}
+                          disabled={updatingStatusId === c.id}
+                          className="p-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 rounded-md transition-colors cursor-pointer"
+                          title="Ativar Contrato Imediatamente"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={() => setActiveContrato(c)}
                         className="p-1.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 rounded-md text-zinc-700 dark:text-zinc-300 font-medium inline-flex items-center gap-1 cursor-pointer"
@@ -358,12 +422,60 @@ export const ContratosPage: React.FC<ContratosPageProps> = ({ onNavigate, select
       {activeContrato && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl max-w-4xl w-full p-6 my-8 max-h-[90vh] overflow-y-auto space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800 gap-3">
               <div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
-                  {activeContrato.numero}
-                </span>
-                <h3 className="font-bold text-base text-zinc-900 dark:text-zinc-100 mt-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 font-mono">
+                    {activeContrato.numero}
+                  </span>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-zinc-400 text-xs font-semibold">Status:</span>
+                    <select
+                      value={activeContrato.status}
+                      disabled={updatingStatusId === activeContrato.id}
+                      onChange={(e) => handleUpdateStatus(activeContrato.id!, e.target.value as StatusContrato)}
+                      className={`text-xs font-bold rounded-lg px-2.5 py-1 border transition-colors cursor-pointer ${
+                        activeContrato.status === 'Ativo'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                          : activeContrato.status === 'Aguardando assinatura'
+                          ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-800'
+                          : activeContrato.status === 'Em revisão'
+                          ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800'
+                          : activeContrato.status === 'Encerrado'
+                          ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700'
+                          : activeContrato.status === 'Cancelado'
+                          ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                          : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                      }`}
+                    >
+                      <option value="Rascunho">Rascunho</option>
+                      <option value="Em revisão">Em revisão</option>
+                      <option value="Aguardando assinatura">Aguardando assinatura</option>
+                      <option value="Ativo">Ativo</option>
+                      <option value="Encerrado">Encerrado</option>
+                      <option value="Cancelado">Cancelado</option>
+                    </select>
+
+                    {activeContrato.status !== 'Ativo' && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStatus(activeContrato.id!, 'Ativo')}
+                        disabled={updatingStatusId === activeContrato.id}
+                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-xs"
+                        title="Ativar contrato agora"
+                      >
+                        {updatingStatusId === activeContrato.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-3 h-3" />
+                        )}
+                        Ativar Agora
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <h3 className="font-bold text-base text-zinc-900 dark:text-zinc-100 mt-1.5">
                   {activeContrato.titulo}
                 </h3>
               </div>

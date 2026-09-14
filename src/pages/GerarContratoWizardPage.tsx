@@ -20,10 +20,10 @@ import {
 import { getModelos } from '../services/modelosService';
 import { getContratantes } from '../services/contratantesService';
 import { getContratados } from '../services/contratadosService';
-import { createContrato, deleteContrato } from '../services/contratosService';
+import { createContrato, deleteContrato, updateStatusContrato } from '../services/contratosService';
 import { exportarPDF, exportarDOCX } from '../services/documentExportService';
 import { renderizarContrato } from '../utils/templateEngine';
-import { ModeloContrato, PartesDados, ClausulaModel, ContratoData } from '../types';
+import { ModeloContrato, PartesDados, ClausulaModel, ContratoData, StatusContrato } from '../types';
 import { AIAssistantModal } from '../components/AIAssistantModal';
 import { A4DocumentPreview } from '../components/A4DocumentPreview';
 import { useAuth } from '../context/AuthContext';
@@ -98,7 +98,23 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
   // Finalization State
   const [savingContract, setSavingContract] = useState(false);
   const [createdContratoId, setCreatedContratoId] = useState<string | null>(null);
+  const [createdContratoStatus, setCreatedContratoStatus] = useState<StatusContrato>('Rascunho');
+  const [updatingCreatedStatus, setUpdatingCreatedStatus] = useState(false);
   const [deletingCreated, setDeletingCreated] = useState(false);
+
+  const handleActivateCreatedContract = async () => {
+    if (!createdContratoId) return;
+    setUpdatingCreatedStatus(true);
+    try {
+      await updateStatusContrato(createdContratoId, 'Ativo', currentUser?.uid || 'user');
+      setCreatedContratoStatus('Ativo');
+    } catch (err: any) {
+      console.error('Erro ao ativar contrato recém-criado:', err);
+      alert('Erro ao ativar contrato: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setUpdatingCreatedStatus(false);
+    }
+  };
 
   const handleDeleteCreatedContract = async () => {
     if (!createdContratoId) return;
@@ -1010,6 +1026,40 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
                 <p className="text-xs text-zinc-500">
                   O documento foi registrado no banco de dados e está pronto para exportação profissional.
                 </p>
+
+                {/* Status Indicator & Quick Activation */}
+                <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-xs font-semibold border border-zinc-200 dark:border-zinc-700">
+                    <span className="text-zinc-500">Status:</span>
+                    <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                      createdContratoStatus === 'Ativo'
+                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
+                    }`}>
+                      {createdContratoStatus}
+                    </span>
+                    {createdContratoStatus !== 'Ativo' ? (
+                      <button
+                        type="button"
+                        onClick={handleActivateCreatedContract}
+                        disabled={updatingCreatedStatus}
+                        className="ml-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                        title="Ativar contrato agora mesmo no banco de dados"
+                      >
+                        {updatingCreatedStatus ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        )}
+                        Ativar Contrato Agora
+                      </button>
+                    ) : (
+                      <span className="text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-1 ml-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Contrato Ativo
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Action Buttons: PDF & WORD */}
@@ -1024,7 +1074,7 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
                       modeloNome: selectedModelo?.nome || '',
                       contratanteId: selectedContratante?.id || '',
                       contratadoId: selectedContratado?.id || '',
-                      status: 'Rascunho',
+                      status: createdContratoStatus,
                       dadosVariaveis,
                       clausulas: clausulasModel,
                       conteudoFinal: renderedText,
@@ -1035,7 +1085,7 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
                     };
                     exportarPDF(tempContrato);
                   }}
-                  className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-2"
+                  className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-2 cursor-pointer"
                 >
                   <Download className="w-4 h-4" /> Gerar PDF Profissional
                 </button>
@@ -1050,7 +1100,7 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
                       modeloNome: selectedModelo?.nome || '',
                       contratanteId: selectedContratante?.id || '',
                       contratadoId: selectedContratado?.id || '',
-                      status: 'Rascunho',
+                      status: createdContratoStatus,
                       dadosVariaveis,
                       clausulas: clausulasModel,
                       conteudoFinal: renderedText,
@@ -1061,7 +1111,7 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
                     };
                     exportarDOCX(tempContrato);
                   }}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-2"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-2 cursor-pointer"
                 >
                   <Download className="w-4 h-4" /> Gerar Word (.DOCX)
                 </button>
@@ -1077,7 +1127,7 @@ export const GerarContratoWizardPage: React.FC<GerarContratoWizardPageProps> = (
                   modeloNome: '',
                   contratanteId: '',
                   contratadoId: '',
-                  status: 'Rascunho',
+                  status: createdContratoStatus,
                   dadosVariaveis,
                   clausulas: clausulasModel,
                   conteudoFinal: renderedText,
